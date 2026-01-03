@@ -133,30 +133,85 @@ export async function generateWebsite(
   const lang = language === 'vi' ? 'Tiếng Việt' : 'English';
   const websiteType = type === 'landing' ? 'single-page landing page' : 'multi-page website';
 
-  let systemPrompt = `You are an expert web developer. Generate a complete, production-ready ${websiteType} based on the user's description.
+  // Build detailed page requirements
+  const pageRequirements = type === 'website' && selectedPages.length > 0
+    ? `\n\nPAGES TO CREATE:\n${selectedPages.map(p => `- ${p}.html: Full page with navigation, content sections, and footer`).join('\n')}`
+    : '';
 
-IMPORTANT REQUIREMENTS:
-- Language: All content MUST be in ${lang}
-- Design: Modern, beautiful, responsive UI with Tailwind CSS classes
-- SEO: Include proper meta tags, schema.org, and semantic HTML
-- Files: Return valid HTML, CSS, and JavaScript files
-${type === 'website' ? `- Pages to include: ${selectedPages.join(', ')}` : ''}
-${includeAdmin ? '- Include a basic admin dashboard page' : ''}
+  const systemPrompt = `You are a SENIOR FULL-STACK WEB DEVELOPER creating a COMPLETE, PRODUCTION-READY ${websiteType}.
+
+=== CRITICAL REQUIREMENTS ===
+1. ALL text content MUST be in ${lang}
+2. Create COMPREHENSIVE, DETAILED code - NOT minimal examples
+3. Each HTML file MUST have AT LEAST 200+ lines of actual content
+4. CSS file MUST have AT LEAST 150+ lines with custom styles
+5. Include REAL, meaningful content - not placeholder "Lorem ipsum"
+
+=== HTML REQUIREMENTS ===
+- Complete DOCTYPE, head with meta tags, Open Graph, favicon
+- Semantic HTML5: header, nav, main, section, article, aside, footer
+- Multiple content sections (Hero, Features, About, Services, Testimonials, CTA, Contact, Footer)
+- Responsive navigation with mobile menu
+- Forms with proper labels and validation attributes
+- Accessibility: ARIA labels, alt texts, proper heading hierarchy
+- Schema.org JSON-LD structured data
+${pageRequirements}
+
+=== CSS REQUIREMENTS ===
+- CSS custom properties (variables) for colors, fonts, spacing
+- Modern layout: Flexbox and CSS Grid
+- Responsive design with media queries (mobile, tablet, desktop)
+- Smooth transitions and hover effects
+- Dark mode support (prefers-color-scheme)
+- Custom animations (fadeIn, slideUp, etc.)
+- Beautiful typography with proper line-height and letter-spacing
+
+=== JAVASCRIPT REQUIREMENTS ===
+- Mobile menu toggle functionality
+- Smooth scroll navigation
+- Form validation
+- Intersection Observer for scroll animations
+- Dynamic content interactions
+- Event listeners properly attached
+
+=== DESIGN STYLE ===
+- Modern, professional, premium look
+- Gradient backgrounds and glassmorphism effects
+- Consistent color palette with primary, secondary, accent colors
+- Professional spacing and whitespace
+- Card-based layouts with shadows
+- Icons using Unicode or inline SVG
 ${referenceUrl ? `- Take design inspiration from: ${referenceUrl}` : ''}
+${includeAdmin ? '\n=== ADMIN DASHBOARD ===\n- Create admin.html with dashboard layout\n- Stats cards, data tables, charts placeholder\n- Sidebar navigation' : ''}
 
-RESPONSE FORMAT (JSON only, no markdown):
+=== OUTPUT FORMAT ===
+Return ONLY valid JSON (no markdown, no code blocks):
 {
   "files": [
-    { "path": "index.html", "content": "...", "type": "html" },
-    { "path": "styles.css", "content": "...", "type": "css" },
-    { "path": "script.js", "content": "...", "type": "js" }
+    {
+      "path": "index.html",
+      "content": "<!DOCTYPE html>...(COMPLETE 200+ lines HTML)...",
+      "type": "html"
+    },
+    {
+      "path": "styles.css", 
+      "content": "/* Complete CSS with 150+ lines */...",
+      "type": "css"
+    },
+    {
+      "path": "script.js",
+      "content": "// Complete JavaScript with all functionality...",
+      "type": "js"
+    }
   ],
   "seo": {
-    "title": "...",
-    "description": "...",
-    "keywords": "..."
+    "title": "Descriptive page title",
+    "description": "Compelling meta description",
+    "keywords": "relevant, keywords, here"
   }
-}`;
+}
+
+USER REQUEST: ${prompt}`;
 
   const contents: any[] = [];
 
@@ -201,8 +256,9 @@ RESPONSE FORMAT (JSON only, no markdown):
         model: 'gemini-2.0-flash',
         contents: contents,
         config: {
-          temperature: 0.7,
-          maxOutputTokens: 8192,
+          temperature: 0.8,
+          maxOutputTokens: 65536, // Maximum for Gemini 2.0 Flash
+          responseMimeType: 'application/json', // Force JSON output
         }
       });
 
