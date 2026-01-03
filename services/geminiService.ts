@@ -1,9 +1,8 @@
 import { GoogleGenAI } from '@google/genai';
-import { WebsiteData, Language, WebsiteType } from '../types';
+import { WebsiteData, Language, WebsiteType, GeneratedFile } from '../types';
 
 // ==================== API KEY ROTATION SYSTEM ====================
 
-// Load all API keys from environment variables (GEMINI_API_KEY_1 to GEMINI_API_KEY_20)
 const loadApiKeys = (): string[] => {
   const keys: string[] = [];
   for (let i = 1; i <= 20; i++) {
@@ -12,7 +11,6 @@ const loadApiKeys = (): string[] => {
       keys.push(key.trim());
     }
   }
-  // Fallback to single key if no numbered keys found
   if (keys.length === 0) {
     const singleKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
     if (singleKey && typeof singleKey === 'string' && singleKey.trim()) {
@@ -25,101 +23,282 @@ const loadApiKeys = (): string[] => {
 
 const API_KEYS = loadApiKeys();
 
-// Track failed keys with timestamp for automatic reset
 interface FailedKeyInfo {
   failedAt: number;
   errorCount: number;
 }
 
 const failedKeys = new Map<number, FailedKeyInfo>();
-const FAILED_KEY_RESET_MS = 5 * 60 * 1000; // Reset failed keys after 5 minutes
+const FAILED_KEY_RESET_MS = 5 * 60 * 1000;
 const MAX_RETRIES = 3;
 
-// Current key index for round-robin
 let currentKeyIndex = 0;
-// Sticky key - use this key until it fails
 let stickyKeyIndex = 0;
 
-// Get the next available API key (round-robin with failed key skipping)
 const getNextApiKey = (): { key: string; index: number } | null => {
-  if (API_KEYS.length === 0) {
-    console.error('[Gemini] No API keys available');
-    return null;
-  }
+  if (API_KEYS.length === 0) return null;
 
   const now = Date.now();
-
-  // Reset keys that have been failed for too long
   for (const [index, info] of failedKeys.entries()) {
     if (now - info.failedAt > FAILED_KEY_RESET_MS) {
-      console.log(`[Gemini] Resetting key ${index + 1} after cooldown`);
       failedKeys.delete(index);
     }
   }
 
-  // First, try the sticky key if it's not failed
   if (!failedKeys.has(stickyKeyIndex)) {
     return { key: API_KEYS[stickyKeyIndex], index: stickyKeyIndex };
   }
 
-  // Find next available key using round-robin
-  const startIndex = currentKeyIndex;
   let attempts = 0;
-
   while (attempts < API_KEYS.length) {
     if (!failedKeys.has(currentKeyIndex)) {
       const key = API_KEYS[currentKeyIndex];
       const index = currentKeyIndex;
-      // Update sticky key to this new working key
       stickyKeyIndex = currentKeyIndex;
       currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-      console.log(`[Gemini] Using key ${index + 1}/${API_KEYS.length}`);
       return { key, index };
     }
     currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
     attempts++;
   }
 
-  // All keys are failed, reset all and try again
-  console.warn('[Gemini] All keys failed, resetting all keys');
   failedKeys.clear();
   stickyKeyIndex = 0;
   currentKeyIndex = 0;
   return { key: API_KEYS[0], index: 0 };
 };
 
-// Mark a key as failed
 const markKeyAsFailed = (index: number, error: any): void => {
-  const existing = failedKeys.get(index);
-  const errorCount = existing ? existing.errorCount + 1 : 1;
-
   failedKeys.set(index, {
     failedAt: Date.now(),
-    errorCount
+    errorCount: (failedKeys.get(index)?.errorCount || 0) + 1
   });
-
-  console.warn(`[Gemini] Key ${index + 1} failed (count: ${errorCount}):`, error?.message || error);
-
-  // Move to next key
   currentKeyIndex = (index + 1) % API_KEYS.length;
 };
 
-// Create GenAI instance with specific key
-const createGenAI = (apiKey: string): GoogleGenAI => {
-  return new GoogleGenAI({ apiKey });
-};
+const createGenAI = (apiKey: string): GoogleGenAI => new GoogleGenAI({ apiKey });
 
-// Get status of all keys (for debugging)
-export const getKeyStatus = (): { total: number; available: number; failed: number[] } => {
-  const failedIndices = Array.from(failedKeys.keys()).map(i => i + 1);
-  return {
-    total: API_KEYS.length,
-    available: API_KEYS.length - failedKeys.size,
-    failed: failedIndices
-  };
-};
+export const getKeyStatus = () => ({
+  total: API_KEYS.length,
+  available: API_KEYS.length - failedKeys.size,
+  failed: Array.from(failedKeys.keys()).map(i => i + 1)
+});
 
-// ==================== END API KEY ROTATION SYSTEM ====================
+// ==================== MULTI-STEP GENERATION ====================
+
+interface GenerationContext {
+  prompt: string;
+  language: Language;
+  lang: string;
+  type: WebsiteType;
+  selectedPages: string[];
+  includeAdmin: boolean;
+  referenceUrl?: string;
+}
+
+// Helper: Call Gemini API with retry
+async function callGeminiAPI(prompt: string, expectJson = true): Promise<string> {
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const keyInfo = getNextApiKey();
+    if (!keyInfo) throw new Error('No API keys available');
+
+    try {
+      const genAI = createGenAI(keyInfo.key);
+      const response = await genAI.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          temperature: 0.8,
+          maxOutputTokens: 32768,
+          ...(expectJson && { responseMimeType: 'application/json' })
+        }
+      });
+
+      const text = response.text || '';
+      console.log(`[Gemini] Response length: ${text.length} chars`);
+      return text;
+    } catch (error: any) {
+      lastError = error;
+      console.error(`[Gemini] Attempt ${attempt + 1} failed:`, error?.message);
+      markKeyAsFailed(keyInfo.index, error);
+
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw lastError || new Error('All API retries exhausted');
+}
+
+// Parse JSON response
+function parseJsonResponse<T>(text: string): T {
+  let jsonStr = text.trim();
+  if (jsonStr.startsWith('```json')) jsonStr = jsonStr.slice(7);
+  else if (jsonStr.startsWith('```')) jsonStr = jsonStr.slice(3);
+  if (jsonStr.endsWith('```')) jsonStr = jsonStr.slice(0, -3);
+  return JSON.parse(jsonStr.trim());
+}
+
+// STEP 1: Generate HTML
+async function generateHTML(ctx: GenerationContext): Promise<GeneratedFile> {
+  console.log('[Step 1/4] Generating HTML...');
+
+  const prompt = `You are a SENIOR WEB DEVELOPER. Create a COMPLETE, PRODUCTION-READY index.html file.
+
+USER REQUEST: ${ctx.prompt}
+
+REQUIREMENTS:
+- ALL text content in ${ctx.lang}
+- Modern, responsive design with Tailwind CSS (use CDN: https://cdn.tailwindcss.com)
+- AT LEAST 250 lines of HTML
+- Include: DOCTYPE, head (meta, OG tags, title), and full body
+- Sections: Header/Nav, Hero, Features (6+ items), About, Services, Testimonials (3+), CTA, Contact Form, Footer
+- Mobile-responsive navigation
+- Real content (not Lorem ipsum)
+- Icons using emoji or SVG
+- Schema.org JSON-LD
+- Link to styles.css and script.js
+
+Return JSON only:
+{"path": "index.html", "content": "<!DOCTYPE html>...", "type": "html"}`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    return parseJsonResponse<GeneratedFile>(text);
+  } catch (e) {
+    console.error('[Step 1] HTML generation failed, using fallback');
+    return { path: 'index.html', content: generateFallbackHTML(ctx.prompt, ctx.language), type: 'html' };
+  }
+}
+
+// STEP 2: Generate CSS
+async function generateCSS(ctx: GenerationContext, htmlContent: string): Promise<GeneratedFile> {
+  console.log('[Step 2/4] Generating CSS...');
+
+  const prompt = `You are a CSS EXPERT. Create a COMPREHENSIVE styles.css file for this website.
+
+WEBSITE CONTEXT: ${ctx.prompt}
+
+REQUIREMENTS:
+- AT LEAST 200 lines of CSS
+- CSS custom properties (variables) for colors, fonts
+- Modern layout: Flexbox and Grid
+- Responsive: mobile, tablet, desktop breakpoints
+- Dark mode with prefers-color-scheme
+- Smooth transitions and hover effects
+- Custom animations: fadeIn, slideUp, pulse
+- Typography: line-height, letter-spacing
+- Glassmorphism effects
+- Custom scrollbar
+- Form styling
+
+The HTML uses Tailwind CSS, but add custom styles for:
+- Custom components not covered by Tailwind
+- Animations
+- Color scheme variables
+- Dark mode overrides
+
+Return JSON only:
+{"path": "styles.css", "content": "/* Full CSS code */", "type": "css"}`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    return parseJsonResponse<GeneratedFile>(text);
+  } catch (e) {
+    console.error('[Step 2] CSS generation failed, using fallback');
+    return { path: 'styles.css', content: generateFallbackCSS(), type: 'css' };
+  }
+}
+
+// STEP 3: Generate JavaScript
+async function generateJS(ctx: GenerationContext): Promise<GeneratedFile> {
+  console.log('[Step 3/4] Generating JavaScript...');
+
+  const prompt = `You are a JavaScript EXPERT. Create a COMPREHENSIVE script.js file.
+
+WEBSITE CONTEXT: ${ctx.prompt}
+
+REQUIREMENTS:
+- AT LEAST 100 lines of JavaScript
+- Mobile menu toggle (hamburger menu)
+- Smooth scroll for anchor links
+- Scroll spy for navigation
+- Form validation
+- Intersection Observer for scroll animations
+- Sticky header on scroll
+- Back to top button
+- Modal/popup handling
+- Dynamic content interactions
+- Lazy loading images
+
+Use modern ES6+ syntax. Add event listeners on DOMContentLoaded.
+
+Return JSON only:
+{"path": "script.js", "content": "// Complete JavaScript code", "type": "js"}`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    return parseJsonResponse<GeneratedFile>(text);
+  } catch (e) {
+    console.error('[Step 3] JS generation failed, using fallback');
+    return { path: 'script.js', content: generateFallbackJS(), type: 'js' };
+  }
+}
+
+// STEP 4: Generate Additional Pages
+async function generatePage(pageName: string, ctx: GenerationContext): Promise<GeneratedFile> {
+  console.log(`[Step 4] Generating ${pageName}.html...`);
+
+  const prompt = `You are a WEB DEVELOPER. Create a complete ${pageName}.html page.
+
+WEBSITE CONTEXT: ${ctx.prompt}
+PAGE: ${pageName}
+
+REQUIREMENTS:
+- ALL text in ${ctx.lang}
+- AT LEAST 150 lines of HTML
+- Use Tailwind CSS CDN
+- Include header/nav (same as main site), main content, footer
+- Page-specific content for "${pageName}"
+- Link to styles.css and script.js
+- Responsive design
+
+Return JSON only:
+{"path": "${pageName}.html", "content": "<!DOCTYPE html>...", "type": "html"}`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    return parseJsonResponse<GeneratedFile>(text);
+  } catch (e) {
+    console.error(`[Step 4] ${pageName}.html generation failed`);
+    return { path: `${pageName}.html`, content: generateFallbackPage(pageName, ctx), type: 'html' };
+  }
+}
+
+// Generate SEO data
+async function generateSEO(ctx: GenerationContext): Promise<{ title: string; description: string; keywords: string }> {
+  const prompt = `Generate SEO metadata for this website: "${ctx.prompt}"
+Language: ${ctx.lang}
+
+Return JSON only:
+{"title": "60 char title", "description": "160 char description", "keywords": "keyword1, keyword2, keyword3"}`;
+
+  try {
+    const text = await callGeminiAPI(prompt);
+    return parseJsonResponse<{ title: string; description: string; keywords: string }>(text);
+  } catch (e) {
+    return {
+      title: ctx.prompt.slice(0, 60),
+      description: ctx.prompt,
+      keywords: 'website, landing page'
+    };
+  }
+}
+
+// ==================== MAIN EXPORT ====================
 
 export async function generateWebsite(
   prompt: string,
@@ -130,201 +309,59 @@ export async function generateWebsite(
   referenceUrl?: string,
   referenceImage?: string | null
 ): Promise<WebsiteData> {
-  const lang = language === 'vi' ? 'Tiếng Việt' : 'English';
-  const websiteType = type === 'landing' ? 'single-page landing page' : 'multi-page website';
-
-  // Build detailed page requirements
-  const pageRequirements = type === 'website' && selectedPages.length > 0
-    ? `\n\nPAGES TO CREATE:\n${selectedPages.map(p => `- ${p}.html: Full page with navigation, content sections, and footer`).join('\n')}`
-    : '';
-
-  const systemPrompt = `You are a SENIOR FULL-STACK WEB DEVELOPER creating a COMPLETE, PRODUCTION-READY ${websiteType}.
-
-=== CRITICAL REQUIREMENTS ===
-1. ALL text content MUST be in ${lang}
-2. Create COMPREHENSIVE, DETAILED code - NOT minimal examples
-3. Each HTML file MUST have AT LEAST 200+ lines of actual content
-4. CSS file MUST have AT LEAST 150+ lines with custom styles
-5. Include REAL, meaningful content - not placeholder "Lorem ipsum"
-
-=== HTML REQUIREMENTS ===
-- Complete DOCTYPE, head with meta tags, Open Graph, favicon
-- Semantic HTML5: header, nav, main, section, article, aside, footer
-- Multiple content sections (Hero, Features, About, Services, Testimonials, CTA, Contact, Footer)
-- Responsive navigation with mobile menu
-- Forms with proper labels and validation attributes
-- Accessibility: ARIA labels, alt texts, proper heading hierarchy
-- Schema.org JSON-LD structured data
-${pageRequirements}
-
-=== CSS REQUIREMENTS ===
-- CSS custom properties (variables) for colors, fonts, spacing
-- Modern layout: Flexbox and CSS Grid
-- Responsive design with media queries (mobile, tablet, desktop)
-- Smooth transitions and hover effects
-- Dark mode support (prefers-color-scheme)
-- Custom animations (fadeIn, slideUp, etc.)
-- Beautiful typography with proper line-height and letter-spacing
-
-=== JAVASCRIPT REQUIREMENTS ===
-- Mobile menu toggle functionality
-- Smooth scroll navigation
-- Form validation
-- Intersection Observer for scroll animations
-- Dynamic content interactions
-- Event listeners properly attached
-
-=== DESIGN STYLE ===
-- Modern, professional, premium look
-- Gradient backgrounds and glassmorphism effects
-- Consistent color palette with primary, secondary, accent colors
-- Professional spacing and whitespace
-- Card-based layouts with shadows
-- Icons using Unicode or inline SVG
-${referenceUrl ? `- Take design inspiration from: ${referenceUrl}` : ''}
-${includeAdmin ? '\n=== ADMIN DASHBOARD ===\n- Create admin.html with dashboard layout\n- Stats cards, data tables, charts placeholder\n- Sidebar navigation' : ''}
-
-=== OUTPUT FORMAT ===
-Return ONLY valid JSON (no markdown, no code blocks):
-{
-  "files": [
-    {
-      "path": "index.html",
-      "content": "<!DOCTYPE html>...(COMPLETE 200+ lines HTML)...",
-      "type": "html"
-    },
-    {
-      "path": "styles.css", 
-      "content": "/* Complete CSS with 150+ lines */...",
-      "type": "css"
-    },
-    {
-      "path": "script.js",
-      "content": "// Complete JavaScript with all functionality...",
-      "type": "js"
-    }
-  ],
-  "seo": {
-    "title": "Descriptive page title",
-    "description": "Compelling meta description",
-    "keywords": "relevant, keywords, here"
-  }
-}
-
-USER REQUEST: ${prompt}`;
-
-  const contents: any[] = [];
-
-  // Add image if provided
-  if (referenceImage && referenceImage.startsWith('data:image')) {
-    const base64Data = referenceImage.split(',')[1];
-    const mimeType = referenceImage.split(';')[0].split(':')[1];
-
-    contents.push({
-      role: 'user',
-      parts: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Data
-          }
-        },
-        {
-          text: `Analyze this reference image and use its design style (colors, layout, typography) as inspiration.\n\nUser Request: ${prompt}\n\n${systemPrompt}`
-        }
-      ]
-    });
-  } else {
-    contents.push({
-      role: 'user',
-      parts: [{ text: `${systemPrompt}\n\nUser Request: ${prompt}` }]
-    });
-  }
-
-  // Retry logic with key rotation
-  let lastError: any = null;
-
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    const keyInfo = getNextApiKey();
-    if (!keyInfo) {
-      throw new Error('No API keys available');
-    }
-
-    try {
-      const genAI = createGenAI(keyInfo.key);
-      const response = await genAI.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: contents,
-        config: {
-          temperature: 0.8,
-          maxOutputTokens: 65536, // Maximum for Gemini 2.0 Flash
-          responseMimeType: 'application/json', // Force JSON output
-        }
-      });
-
-      const text = response.text || '';
-
-      // Clean up the response - remove markdown code blocks if present
-      let jsonStr = text.trim();
-      if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.slice(7);
-      } else if (jsonStr.startsWith('```')) {
-        jsonStr = jsonStr.slice(3);
-      }
-      if (jsonStr.endsWith('```')) {
-        jsonStr = jsonStr.slice(0, -3);
-      }
-      jsonStr = jsonStr.trim();
-
-      const data = JSON.parse(jsonStr) as WebsiteData;
-      return data;
-    } catch (error: any) {
-      lastError = error;
-      console.error(`[Gemini] Attempt ${attempt + 1}/${MAX_RETRIES} failed with key ${keyInfo.index + 1}:`, error?.message);
-
-      // Check if it's a rate limit or quota error
-      const isQuotaError = error?.message?.includes('429') ||
-        error?.message?.includes('quota') ||
-        error?.message?.includes('rate') ||
-        error?.status === 429;
-
-      if (isQuotaError) {
-        markKeyAsFailed(keyInfo.index, error);
-      } else {
-        // For other errors, still mark as failed but might be temporary
-        markKeyAsFailed(keyInfo.index, error);
-      }
-
-      // Small delay before retry
-      if (attempt < MAX_RETRIES - 1) {
-        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-      }
-    }
-  }
-
-  console.error('[Gemini] All retries exhausted:', lastError);
-
-  // Return a fallback template if API fails
-  return {
-    files: [
-      {
-        path: 'index.html',
-        content: generateFallbackHTML(prompt, language),
-        type: 'html'
-      },
-      {
-        path: 'styles.css',
-        content: generateFallbackCSS(),
-        type: 'css'
-      }
-    ],
-    seo: {
-      title: prompt.slice(0, 60),
-      description: prompt,
-      keywords: 'website, landing page'
-    }
+  const ctx: GenerationContext = {
+    prompt,
+    language,
+    lang: language === 'vi' ? 'Tiếng Việt' : 'English',
+    type,
+    selectedPages,
+    includeAdmin,
+    referenceUrl
   };
+
+  console.log('[Gemini] Starting multi-step generation...');
+  console.log(`[Gemini] Type: ${type}, Pages: ${selectedPages.join(', ')}`);
+
+  const files: GeneratedFile[] = [];
+
+  // Step 1: HTML
+  const htmlFile = await generateHTML(ctx);
+  files.push(htmlFile);
+
+  // Step 2: CSS
+  const cssFile = await generateCSS(ctx, htmlFile.content);
+  files.push(cssFile);
+
+  // Step 3: JavaScript
+  const jsFile = await generateJS(ctx);
+  files.push(jsFile);
+
+  // Step 4: Additional pages (if multi-page website)
+  if (type === 'website' && selectedPages.length > 0) {
+    for (const pageName of selectedPages) {
+      if (pageName !== 'home') {
+        const pageFile = await generatePage(pageName, ctx);
+        files.push(pageFile);
+      }
+    }
+  }
+
+  // Step 5: Admin dashboard (if requested)
+  if (includeAdmin) {
+    const adminFile = await generatePage('admin', ctx);
+    files.push(adminFile);
+  }
+
+  // Generate SEO
+  const seo = await generateSEO(ctx);
+
+  console.log(`[Gemini] Generation complete! ${files.length} files created.`);
+  console.log(`[Gemini] Files: ${files.map(f => f.path).join(', ')}`);
+
+  return { files, seo };
 }
+
+// ==================== FALLBACKS ====================
 
 function generateFallbackHTML(prompt: string, language: Language): string {
   const isVi = language === 'vi';
@@ -343,8 +380,9 @@ function generateFallbackHTML(prompt: string, language: Language): string {
       <h1 class="text-2xl font-bold">${prompt.slice(0, 30)}</h1>
       <div class="flex gap-6">
         <a href="#" class="hover:text-blue-400 transition">${isVi ? 'Trang chủ' : 'Home'}</a>
-        <a href="#" class="hover:text-blue-400 transition">${isVi ? 'Giới thiệu' : 'About'}</a>
-        <a href="#" class="hover:text-blue-400 transition">${isVi ? 'Liên hệ' : 'Contact'}</a>
+        <a href="#features" class="hover:text-blue-400 transition">${isVi ? 'Tính năng' : 'Features'}</a>
+        <a href="#about" class="hover:text-blue-400 transition">${isVi ? 'Giới thiệu' : 'About'}</a>
+        <a href="#contact" class="hover:text-blue-400 transition">${isVi ? 'Liên hệ' : 'Contact'}</a>
       </div>
     </nav>
   </header>
@@ -361,30 +399,249 @@ function generateFallbackHTML(prompt: string, language: Language): string {
         ${isVi ? 'Bắt đầu ngay' : 'Get Started'}
       </button>
     </section>
+
+    <section id="features" class="mb-20">
+      <h3 class="text-3xl font-bold text-center mb-12">${isVi ? 'Tính năng nổi bật' : 'Key Features'}</h3>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
+          <div class="text-4xl mb-4">⚡</div>
+          <h4 class="text-xl font-bold mb-2">${isVi ? 'Siêu tốc' : 'Lightning Fast'}</h4>
+          <p class="text-slate-400">${isVi ? 'Hiệu suất tối ưu cho trải nghiệm tốt nhất' : 'Optimized performance for the best experience'}</p>
+        </div>
+        <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
+          <div class="text-4xl mb-4">🛡️</div>
+          <h4 class="text-xl font-bold mb-2">${isVi ? 'Bảo mật' : 'Secure'}</h4>
+          <p class="text-slate-400">${isVi ? 'Bảo vệ dữ liệu của bạn tuyệt đối' : 'Your data is absolutely protected'}</p>
+        </div>
+        <div class="p-6 bg-white/5 rounded-2xl border border-white/10">
+          <div class="text-4xl mb-4">🎨</div>
+          <h4 class="text-xl font-bold mb-2">${isVi ? 'Thiết kế đẹp' : 'Beautiful Design'}</h4>
+          <p class="text-slate-400">${isVi ? 'Giao diện hiện đại, chuyên nghiệp' : 'Modern, professional interface'}</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="about" class="mb-20 text-center">
+      <h3 class="text-3xl font-bold mb-8">${isVi ? 'Về chúng tôi' : 'About Us'}</h3>
+      <p class="text-lg text-slate-300 max-w-3xl mx-auto">
+        ${isVi ? 'Chúng tôi là đội ngũ chuyên gia với nhiều năm kinh nghiệm trong lĩnh vực công nghệ. Sứ mệnh của chúng tôi là mang đến những giải pháp tốt nhất cho khách hàng.' : 'We are a team of experts with years of experience in the technology field. Our mission is to deliver the best solutions to our customers.'}
+      </p>
+    </section>
+
+    <section id="contact" class="text-center">
+      <h3 class="text-3xl font-bold mb-8">${isVi ? 'Liên hệ' : 'Contact Us'}</h3>
+      <form class="max-w-md mx-auto space-y-4">
+        <input type="text" placeholder="${isVi ? 'Họ tên' : 'Full Name'}" class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-blue-500 outline-none">
+        <input type="email" placeholder="Email" class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-blue-500 outline-none">
+        <textarea placeholder="${isVi ? 'Tin nhắn' : 'Message'}" rows="4" class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 focus:border-blue-500 outline-none"></textarea>
+        <button type="submit" class="w-full px-8 py-4 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold transition">
+          ${isVi ? 'Gửi tin nhắn' : 'Send Message'}
+        </button>
+      </form>
+    </section>
   </main>
   
-  <footer class="border-t border-white/10 py-8 text-center text-slate-400">
+  <footer class="border-t border-white/10 py-8 text-center text-slate-400 mt-20">
     <p>© 2024 ${prompt.slice(0, 30)}. ${isVi ? 'Tạo bởi DMP AI' : 'Created by DMP AI'}</p>
   </footer>
+  <script src="script.js"></script>
 </body>
 </html>`;
 }
 
 function generateFallbackCSS(): string {
-  return `/* Custom styles */
+  return `/* DMP AI Generated Styles */
+:root {
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+  --color-secondary: #8b5cf6;
+  --color-background: #0f172a;
+  --color-surface: #1e293b;
+  --color-text: #f8fafc;
+  --color-text-muted: #94a3b8;
+}
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+html {
+  scroll-behavior: smooth;
 }
 
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-background);
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(40px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.6s ease-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.8s ease-out;
+}
+
+/* Glass effect */
 .glass {
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-primary);
+  border-radius: 4px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  nav .flex.gap-6 {
+    display: none;
+  }
 }`;
+}
+
+function generateFallbackJS(): string {
+  return `// DMP AI Generated JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('Website initialized');
+
+  // Smooth scroll for anchor links
+  document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function(e) {
+      e.preventDefault();
+      const target = document.querySelector(this.getAttribute('href'));
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+
+  // Form validation
+  const form = document.querySelector('form');
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const inputs = form.querySelectorAll('input, textarea');
+      let isValid = true;
+      
+      inputs.forEach(input => {
+        if (!input.value.trim()) {
+          input.style.borderColor = '#ef4444';
+          isValid = false;
+        } else {
+          input.style.borderColor = '';
+        }
+      });
+
+      if (isValid) {
+        alert('Form submitted successfully!');
+        form.reset();
+      }
+    });
+  }
+
+  // Scroll animations
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.style.opacity = '1';
+        entry.target.style.transform = 'translateY(0)';
+      }
+    });
+  }, { threshold: 0.1 });
+
+  document.querySelectorAll('section').forEach(section => {
+    section.style.opacity = '0';
+    section.style.transform = 'translateY(20px)';
+    section.style.transition = 'all 0.6s ease-out';
+    observer.observe(section);
+  });
+
+  // Mobile menu (if exists)
+  const menuBtn = document.querySelector('.mobile-menu-btn');
+  const mobileMenu = document.querySelector('.mobile-menu');
+  if (menuBtn && mobileMenu) {
+    menuBtn.addEventListener('click', () => {
+      mobileMenu.classList.toggle('hidden');
+    });
+  }
+});`;
+}
+
+function generateFallbackPage(pageName: string, ctx: GenerationContext): string {
+  const isVi = ctx.language === 'vi';
+  const titles: Record<string, { vi: string; en: string }> = {
+    about: { vi: 'Giới thiệu', en: 'About Us' },
+    services: { vi: 'Dịch vụ', en: 'Services' },
+    products: { vi: 'Sản phẩm', en: 'Products' },
+    contact: { vi: 'Liên hệ', en: 'Contact' },
+    blog: { vi: 'Tin tức', en: 'Blog' },
+    admin: { vi: 'Quản trị', en: 'Admin' }
+  };
+
+  const title = titles[pageName]?.[ctx.language] || pageName;
+
+  return `<!DOCTYPE html>
+<html lang="${ctx.language}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - ${ctx.prompt.slice(0, 30)}</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 text-white">
+  <header class="py-6 px-8 border-b border-white/10">
+    <nav class="max-w-6xl mx-auto flex justify-between items-center">
+      <a href="index.html" class="text-2xl font-bold">${ctx.prompt.slice(0, 20)}</a>
+      <a href="index.html" class="text-blue-400 hover:text-white transition">${isVi ? '← Trang chủ' : '← Home'}</a>
+    </nav>
+  </header>
+  
+  <main class="max-w-6xl mx-auto px-8 py-20">
+    <h1 class="text-4xl font-bold mb-8">${title}</h1>
+    <div class="prose prose-invert max-w-none">
+      <p class="text-xl text-slate-300">
+        ${isVi ? `Đây là trang ${title.toLowerCase()}. Nội dung sẽ được cập nhật.` : `This is the ${pageName} page. Content will be updated.`}
+      </p>
+    </div>
+  </main>
+  
+  <footer class="border-t border-white/10 py-8 text-center text-slate-400 mt-20">
+    <p>© 2024 ${ctx.prompt.slice(0, 30)}</p>
+  </footer>
+  <script src="script.js"></script>
+</body>
+</html>`;
 }
