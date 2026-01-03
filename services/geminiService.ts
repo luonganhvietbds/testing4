@@ -92,6 +92,7 @@ interface GenerationContext {
   lang: string;
   type: WebsiteType;
   selectedPages: string[];
+  selectedOptions: string[];
   includeAdmin: boolean;
   referenceUrl?: string;
 }
@@ -158,6 +159,25 @@ Dựa trên yêu cầu trên, hãy:
 2. Xác định ĐỐI TƯỢNG KHÁCH HÀNG MỤC TIÊU
 3. Xác định TONE & MOOD phù hợp (chuyên nghiệp, thân thiện, sang trọng, trẻ trung...)
 4. Xác định MÀU SẮC CHỦ ĐẠO phù hợp với ngành
+
+=== TÍNH NĂNG BỔ SUNG YÊU CẦU ===
+${ctx.selectedOptions.length > 0 ? ctx.selectedOptions.map(opt => {
+    const optionDescriptions: Record<string, string> = {
+      chatbot: '🤖 CHATBOT: Thêm widget chatbot AI ở góc phải màn hình với nút mở/đóng',
+      newsletter: '📰 NEWSLETTER: Thêm section form đăng ký nhận tin (email input + submit button)',
+      partners: '🤝 PARTNERS: Thêm section logo đối tác/khách hàng (6-8 logos)',
+      map: '📍 MAP: Thêm Google Maps iframe trong phần liên hệ',
+      videoHero: '🎬 VIDEO HERO: Hero section có video background thay vì ảnh',
+      stats: '📊 STATS: Thêm section số liệu thống kê với animation counter (4 items)',
+      awards: '🏆 AWARDS: Thêm section chứng chỉ/giải thưởng',
+      promoPopup: '🎉 POPUP: Thêm promotion popup hiển thị khi load trang',
+      appDownload: '📱 APP CTA: Thêm section download app với App Store/Play Store buttons',
+      liveChat: '💬 LIVE CHAT: Thêm widget live chat ở góc màn hình',
+      multiLang: '🌐 MULTI-LANG: Thêm language switcher trong header',
+      rating: '⭐ RATING: Thêm star rating component trong testimonials'
+    };
+    return '- ' + (optionDescriptions[opt] || opt);
+  }).join('\n') : 'Không có tính năng bổ sung'}
 
 === TẠO index.html HOÀN CHỈNH ===
 
@@ -456,6 +476,7 @@ export async function generateWebsite(
   language: Language,
   type: WebsiteType,
   selectedPages: string[],
+  selectedOptions: string[],
   includeAdmin: boolean,
   referenceUrl?: string,
   referenceImage?: string | null
@@ -466,12 +487,13 @@ export async function generateWebsite(
     lang: language === 'vi' ? 'Tiếng Việt' : 'English',
     type,
     selectedPages,
+    selectedOptions,
     includeAdmin,
     referenceUrl
   };
 
   console.log('[Gemini] Starting multi-step generation...');
-  console.log(`[Gemini] Type: ${type}, Pages: ${selectedPages.join(', ')}`);
+  console.log(`[Gemini] Type: ${type}, Pages: ${selectedPages.join(', ')}, Options: ${selectedOptions.join(', ')}`);
 
   const files: GeneratedFile[] = [];
 

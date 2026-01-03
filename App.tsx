@@ -95,6 +95,7 @@ const App: React.FC = () => {
         state.language,
         state.type,
         state.selectedPages,
+        state.selectedOptions,
         state.includeAdmin,
         state.referenceUrl,
         state.referenceImage
