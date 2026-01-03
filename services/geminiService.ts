@@ -1,23 +1,139 @@
 import { GoogleGenAI } from '@google/genai';
 import { WebsiteData, Language, WebsiteType } from '../types';
 
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+// ==================== API KEY ROTATION SYSTEM ====================
 
-const genAI = new GoogleGenAI({ apiKey: API_KEY });
+// Load all API keys from environment variables (GEMINI_API_KEY_1 to GEMINI_API_KEY_20)
+const loadApiKeys = (): string[] => {
+  const keys: string[] = [];
+  for (let i = 1; i <= 20; i++) {
+    const key = import.meta.env[`VITE_GEMINI_API_KEY_${i}`];
+    if (key && typeof key === 'string' && key.trim()) {
+      keys.push(key.trim());
+    }
+  }
+  // Fallback to single key if no numbered keys found
+  if (keys.length === 0) {
+    const singleKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (singleKey && typeof singleKey === 'string' && singleKey.trim()) {
+      keys.push(singleKey.trim());
+    }
+  }
+  console.log(`[Gemini] Loaded ${keys.length} API key(s)`);
+  return keys;
+};
+
+const API_KEYS = loadApiKeys();
+
+// Track failed keys with timestamp for automatic reset
+interface FailedKeyInfo {
+  failedAt: number;
+  errorCount: number;
+}
+
+const failedKeys = new Map<number, FailedKeyInfo>();
+const FAILED_KEY_RESET_MS = 5 * 60 * 1000; // Reset failed keys after 5 minutes
+const MAX_RETRIES = 3;
+
+// Current key index for round-robin
+let currentKeyIndex = 0;
+// Sticky key - use this key until it fails
+let stickyKeyIndex = 0;
+
+// Get the next available API key (round-robin with failed key skipping)
+const getNextApiKey = (): { key: string; index: number } | null => {
+  if (API_KEYS.length === 0) {
+    console.error('[Gemini] No API keys available');
+    return null;
+  }
+
+  const now = Date.now();
+
+  // Reset keys that have been failed for too long
+  for (const [index, info] of failedKeys.entries()) {
+    if (now - info.failedAt > FAILED_KEY_RESET_MS) {
+      console.log(`[Gemini] Resetting key ${index + 1} after cooldown`);
+      failedKeys.delete(index);
+    }
+  }
+
+  // First, try the sticky key if it's not failed
+  if (!failedKeys.has(stickyKeyIndex)) {
+    return { key: API_KEYS[stickyKeyIndex], index: stickyKeyIndex };
+  }
+
+  // Find next available key using round-robin
+  const startIndex = currentKeyIndex;
+  let attempts = 0;
+
+  while (attempts < API_KEYS.length) {
+    if (!failedKeys.has(currentKeyIndex)) {
+      const key = API_KEYS[currentKeyIndex];
+      const index = currentKeyIndex;
+      // Update sticky key to this new working key
+      stickyKeyIndex = currentKeyIndex;
+      currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+      console.log(`[Gemini] Using key ${index + 1}/${API_KEYS.length}`);
+      return { key, index };
+    }
+    currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+    attempts++;
+  }
+
+  // All keys are failed, reset all and try again
+  console.warn('[Gemini] All keys failed, resetting all keys');
+  failedKeys.clear();
+  stickyKeyIndex = 0;
+  currentKeyIndex = 0;
+  return { key: API_KEYS[0], index: 0 };
+};
+
+// Mark a key as failed
+const markKeyAsFailed = (index: number, error: any): void => {
+  const existing = failedKeys.get(index);
+  const errorCount = existing ? existing.errorCount + 1 : 1;
+
+  failedKeys.set(index, {
+    failedAt: Date.now(),
+    errorCount
+  });
+
+  console.warn(`[Gemini] Key ${index + 1} failed (count: ${errorCount}):`, error?.message || error);
+
+  // Move to next key
+  currentKeyIndex = (index + 1) % API_KEYS.length;
+};
+
+// Create GenAI instance with specific key
+const createGenAI = (apiKey: string): GoogleGenAI => {
+  return new GoogleGenAI({ apiKey });
+};
+
+// Get status of all keys (for debugging)
+export const getKeyStatus = (): { total: number; available: number; failed: number[] } => {
+  const failedIndices = Array.from(failedKeys.keys()).map(i => i + 1);
+  return {
+    total: API_KEYS.length,
+    available: API_KEYS.length - failedKeys.size,
+    failed: failedIndices
+  };
+};
+
+// ==================== END API KEY ROTATION SYSTEM ====================
 
 export async function generateWebsite(
-    prompt: string,
-    language: Language,
-    type: WebsiteType,
-    selectedPages: string[],
-    includeAdmin: boolean,
-    referenceUrl?: string,
-    referenceImage?: string | null
+  prompt: string,
+  language: Language,
+  type: WebsiteType,
+  selectedPages: string[],
+  includeAdmin: boolean,
+  referenceUrl?: string,
+  referenceImage?: string | null
 ): Promise<WebsiteData> {
-    const lang = language === 'vi' ? 'Tiếng Việt' : 'English';
-    const websiteType = type === 'landing' ? 'single-page landing page' : 'multi-page website';
+  const lang = language === 'vi' ? 'Tiếng Việt' : 'English';
+  const websiteType = type === 'landing' ? 'single-page landing page' : 'multi-page website';
 
-    let systemPrompt = `You are an expert web developer. Generate a complete, production-ready ${websiteType} based on the user's description.
+  let systemPrompt = `You are an expert web developer. Generate a complete, production-ready ${websiteType} based on the user's description.
 
 IMPORTANT REQUIREMENTS:
 - Language: All content MUST be in ${lang}
@@ -42,89 +158,121 @@ RESPONSE FORMAT (JSON only, no markdown):
   }
 }`;
 
-    const contents: any[] = [];
+  const contents: any[] = [];
 
-    // Add image if provided
-    if (referenceImage && referenceImage.startsWith('data:image')) {
-        const base64Data = referenceImage.split(',')[1];
-        const mimeType = referenceImage.split(';')[0].split(':')[1];
+  // Add image if provided
+  if (referenceImage && referenceImage.startsWith('data:image')) {
+    const base64Data = referenceImage.split(',')[1];
+    const mimeType = referenceImage.split(';')[0].split(':')[1];
 
-        contents.push({
-            role: 'user',
-            parts: [
-                {
-                    inlineData: {
-                        mimeType: mimeType,
-                        data: base64Data
-                    }
-                },
-                {
-                    text: `Analyze this reference image and use its design style (colors, layout, typography) as inspiration.\n\nUser Request: ${prompt}\n\n${systemPrompt}`
-                }
-            ]
-        });
-    } else {
-        contents.push({
-            role: 'user',
-            parts: [{ text: `${systemPrompt}\n\nUser Request: ${prompt}` }]
-        });
+    contents.push({
+      role: 'user',
+      parts: [
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data
+          }
+        },
+        {
+          text: `Analyze this reference image and use its design style (colors, layout, typography) as inspiration.\n\nUser Request: ${prompt}\n\n${systemPrompt}`
+        }
+      ]
+    });
+  } else {
+    contents.push({
+      role: 'user',
+      parts: [{ text: `${systemPrompt}\n\nUser Request: ${prompt}` }]
+    });
+  }
+
+  // Retry logic with key rotation
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const keyInfo = getNextApiKey();
+    if (!keyInfo) {
+      throw new Error('No API keys available');
     }
 
     try {
-        const response = await genAI.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: contents,
-            config: {
-                temperature: 0.7,
-                maxOutputTokens: 8192,
-            }
-        });
-
-        const text = response.text || '';
-
-        // Clean up the response - remove markdown code blocks if present
-        let jsonStr = text.trim();
-        if (jsonStr.startsWith('```json')) {
-            jsonStr = jsonStr.slice(7);
-        } else if (jsonStr.startsWith('```')) {
-            jsonStr = jsonStr.slice(3);
+      const genAI = createGenAI(keyInfo.key);
+      const response = await genAI.models.generateContent({
+        model: 'gemini-2.0-flash',
+        contents: contents,
+        config: {
+          temperature: 0.7,
+          maxOutputTokens: 8192,
         }
-        if (jsonStr.endsWith('```')) {
-            jsonStr = jsonStr.slice(0, -3);
-        }
-        jsonStr = jsonStr.trim();
+      });
 
-        const data = JSON.parse(jsonStr) as WebsiteData;
-        return data;
+      const text = response.text || '';
+
+      // Clean up the response - remove markdown code blocks if present
+      let jsonStr = text.trim();
+      if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.slice(7);
+      } else if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.slice(3);
+      }
+      if (jsonStr.endsWith('```')) {
+        jsonStr = jsonStr.slice(0, -3);
+      }
+      jsonStr = jsonStr.trim();
+
+      const data = JSON.parse(jsonStr) as WebsiteData;
+      return data;
     } catch (error: any) {
-        console.error('Gemini API Error:', error);
+      lastError = error;
+      console.error(`[Gemini] Attempt ${attempt + 1}/${MAX_RETRIES} failed with key ${keyInfo.index + 1}:`, error?.message);
 
-        // Return a fallback template if API fails
-        return {
-            files: [
-                {
-                    path: 'index.html',
-                    content: generateFallbackHTML(prompt, language),
-                    type: 'html'
-                },
-                {
-                    path: 'styles.css',
-                    content: generateFallbackCSS(),
-                    type: 'css'
-                }
-            ],
-            seo: {
-                title: prompt.slice(0, 60),
-                description: prompt,
-                keywords: 'website, landing page'
-            }
-        };
+      // Check if it's a rate limit or quota error
+      const isQuotaError = error?.message?.includes('429') ||
+        error?.message?.includes('quota') ||
+        error?.message?.includes('rate') ||
+        error?.status === 429;
+
+      if (isQuotaError) {
+        markKeyAsFailed(keyInfo.index, error);
+      } else {
+        // For other errors, still mark as failed but might be temporary
+        markKeyAsFailed(keyInfo.index, error);
+      }
+
+      // Small delay before retry
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
     }
+  }
+
+  console.error('[Gemini] All retries exhausted:', lastError);
+
+  // Return a fallback template if API fails
+  return {
+    files: [
+      {
+        path: 'index.html',
+        content: generateFallbackHTML(prompt, language),
+        type: 'html'
+      },
+      {
+        path: 'styles.css',
+        content: generateFallbackCSS(),
+        type: 'css'
+      }
+    ],
+    seo: {
+      title: prompt.slice(0, 60),
+      description: prompt,
+      keywords: 'website, landing page'
+    }
+  };
 }
 
 function generateFallbackHTML(prompt: string, language: Language): string {
-    const isVi = language === 'vi';
-    return `<!DOCTYPE html>
+  const isVi = language === 'vi';
+  return `<!DOCTYPE html>
 <html lang="${language}">
 <head>
   <meta charset="UTF-8">
@@ -167,7 +315,7 @@ function generateFallbackHTML(prompt: string, language: Language): string {
 }
 
 function generateFallbackCSS(): string {
-    return `/* Custom styles */
+  return `/* Custom styles */
 * {
   margin: 0;
   padding: 0;
