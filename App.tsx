@@ -8,6 +8,7 @@ import { FeaturesModal } from './components/FeaturesModal';
 import { IntroScreen } from './components/IntroScreen';
 import { AppState } from './types';
 import { TRANSLATIONS, PAGE_OPTIONS, COMPONENT_OPTIONS } from './constants';
+import { generateWebsite } from './services/geminiService';
 // @ts-ignore
 import JSZip from 'jszip';
 
@@ -18,7 +19,7 @@ const App: React.FC = () => {
     language: 'vi',
     type: 'landing',
     selectedPages: ['home'],
-    selectedOptions: [],  // NEW: component options
+    selectedOptions: [],
     includeAdmin: false,
     referenceUrl: '',
     referenceImage: null,
@@ -108,7 +109,7 @@ const App: React.FC = () => {
       addLog(t.terminal_exporting);
       await new Promise(r => setTimeout(r, 1500));
 
-      addLog(`�?Website generated successfully: ${data.seo.title}`);
+      addLog(`✓ Website generated successfully: ${data.seo.title}`);
 
       setState(prev => ({
         ...prev,
@@ -152,7 +153,7 @@ const App: React.FC = () => {
       URL.revokeObjectURL(url);
 
       if (state.language === 'vi') {
-        alert('Đã tải xuống toàn b�?mã nguồn website.');
+        alert('Đã tải xuống toàn bộ mã nguồn website.');
       } else {
         alert('Full website source code downloaded successfully.');
       }
@@ -342,6 +343,31 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              {/* Component Options */}
+              <div className="space-y-3 animate-slide-down">
+                <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">{t.selectOptions}</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {COMPONENT_OPTIONS.map(opt => (
+                    <button
+                      key={opt.id}
+                      aria-pressed={state.selectedOptions.includes(opt.id)}
+                      onClick={() => {
+                        const current = state.selectedOptions;
+                        if (current.includes(opt.id)) {
+                          setState(s => ({ ...s, selectedOptions: current.filter(o => o !== opt.id) }));
+                        } else {
+                          setState(s => ({ ...s, selectedOptions: [...current, opt.id] }));
+                        }
+                      }}
+                      className={`group flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg text-xs font-bold border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-1 dark:focus:ring-offset-slate-900 ${state.selectedOptions.includes(opt.id) ? 'bg-purple-600 border-purple-600 text-white shadow-md transform scale-[1.02]' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-purple-400 hover:text-purple-600'}`}
+                    >
+                      <span>{opt.icon}</span>
+                      <span>{t[opt.labelKey]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Middle & Right: Input */}
@@ -486,7 +512,7 @@ const App: React.FC = () => {
       <footer className="mt-16 md:mt-24 border-t border-slate-200 dark:border-slate-800 py-8 md:py-12 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center text-slate-600 dark:text-slate-400 text-xs md:text-sm font-medium gap-4 md:gap-0">
           <div className="text-center md:text-left">
-            <span className="font-bold text-slate-800 dark:text-slate-200">DMP AI Developer</span> �?{state.language === 'vi' ? 'Sản phẩm bởi chuyên gia Frontend & AI' : 'Powered by Frontend & AI Experts'}
+            <span className="font-bold text-slate-800 dark:text-slate-200">DMP AI Developer</span> — {state.language === 'vi' ? 'Sản phẩm bởi chuyên gia Frontend & AI' : 'Powered by Frontend & AI Experts'}
           </div>
           <div className="flex space-x-6">
             <a href="mailto:dmpaidev@gmail.com" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Contact</a>
