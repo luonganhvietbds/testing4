@@ -7,14 +7,14 @@ import { WebsiteData, Language, WebsiteType } from '../types';
 const loadApiKeys = (): string[] => {
   const keys: string[] = [];
   for (let i = 1; i <= 20; i++) {
-    const key = import.meta.env[`VITE_GEMINI_API_KEY_${i}`];
+    const key = import.meta.env[`VITE_GEMINI_API_KEY_${i}`] || import.meta.env[`GEMINI_API_KEY_${i}`];
     if (key && typeof key === 'string' && key.trim()) {
       keys.push(key.trim());
     }
   }
   // Fallback to single key if no numbered keys found
   if (keys.length === 0) {
-    const singleKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const singleKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY;
     if (singleKey && typeof singleKey === 'string' && singleKey.trim()) {
       keys.push(singleKey.trim());
     }
