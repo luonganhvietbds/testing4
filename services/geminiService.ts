@@ -107,11 +107,11 @@ async function callGeminiAPI(prompt: string, expectJson = true): Promise<string>
     try {
       const genAI = createGenAI(keyInfo.key);
       const response = await genAI.models.generateContent({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-2.5-flash',  // Upgraded from 2.0-flash for better quality
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
-          temperature: 0.8,
-          maxOutputTokens: 32768,
+          temperature: 0.9,  // Higher temperature for more creative output
+          maxOutputTokens: 65536,  // Maximum output
           ...(expectJson && { responseMimeType: 'application/json' })
         }
       });
@@ -142,106 +142,257 @@ function parseJsonResponse<T>(text: string): T {
   return JSON.parse(jsonStr.trim());
 }
 
-// STEP 1: Generate HTML
+// STEP 1: Generate HTML - Uses user input DEEPLY
 async function generateHTML(ctx: GenerationContext): Promise<GeneratedFile> {
   console.log('[Step 1/4] Generating HTML...');
+  console.log(`[Step 1] User Input: "${ctx.prompt.substring(0, 100)}..."`);
 
-  const prompt = `You are a SENIOR WEB DEVELOPER. Create a COMPLETE, PRODUCTION-READY index.html file.
+  const prompt = `Bạn là một SENIOR FULL-STACK WEB DEVELOPER với 15+ năm kinh nghiệm.
 
-USER REQUEST: ${ctx.prompt}
+=== YÊU CẦU TỪ KHÁCH HÀNG ===
+"${ctx.prompt}"
 
-REQUIREMENTS:
-- ALL text content in ${ctx.lang}
-- Modern, responsive design with Tailwind CSS (use CDN: https://cdn.tailwindcss.com)
-- AT LEAST 250 lines of HTML
-- Include: DOCTYPE, head (meta, OG tags, title), and full body
-- Sections: Header/Nav, Hero, Features (6+ items), About, Services, Testimonials (3+), CTA, Contact Form, Footer
-- Mobile-responsive navigation
-- Real content (not Lorem ipsum)
-- Icons using emoji or SVG
-- Schema.org JSON-LD
-- Link to styles.css and script.js
+=== PHÂN TÍCH YÊU CẦU ===
+Dựa trên yêu cầu trên, hãy:
+1. Xác định LOẠI HÌNH WEBSITE (dịch vụ, sản phẩm, portfolio, doanh nghiệp...)
+2. Xác định ĐỐI TƯỢNG KHÁCH HÀNG MỤC TIÊU
+3. Xác định TONE & MOOD phù hợp (chuyên nghiệp, thân thiện, sang trọng, trẻ trung...)
+4. Xác định MÀU SẮC CHỦ ĐẠO phù hợp với ngành
 
-Return JSON only:
-{"path": "index.html", "content": "<!DOCTYPE html>...", "type": "html"}`;
+=== TẠO index.html HOÀN CHỈNH ===
+
+NGÔN NGỮ: Toàn bộ nội dung phải bằng ${ctx.lang}
+
+YÊU CẦU BẮT BUỘC:
+1. TIÊU ĐỀ & NỘI DUNG phải LIÊN QUAN TRỰC TIẾP đến: "${ctx.prompt}"
+2. KHÔNG dùng Lorem ipsum - tạo nội dung THỰC, CỤ THỂ cho "${ctx.prompt}"
+3. Minimum 300+ dòng HTML
+4. Tailwind CSS CDN: https://cdn.tailwindcss.com
+
+CẤU TRÚC BẮT BUỘC:
+- Header: Logo với tên từ "${ctx.prompt}", navigation 5+ links
+- Hero Section: Headline mạnh mẽ về "${ctx.prompt}", subheadline, 2 CTAs
+- Features: 6 tính năng/lợi ích CỤ THỂ của "${ctx.prompt}"
+- About: Câu chuyện, sứ mệnh liên quan đến "${ctx.prompt}"
+- Services/Products: 4+ dịch vụ/sản phẩm từ "${ctx.prompt}"
+- Testimonials: 3 đánh giá của khách hàng (tên, chức vụ, nội dung)
+- Stats: 4 con số ấn tượng (ví dụ: 500+ khách hàng, 10 năm kinh nghiệm...)
+- CTA Section: Kêu gọi hành động mạnh mẽ
+- Contact: Form liên hệ đầy đủ (họ tên, email, điện thoại, tin nhắn)
+- Footer: Links, thông tin liên hệ, social icons, copyright
+
+KỸ THUẬT:
+- Mobile-first responsive design
+- Semantic HTML5 (header, nav, main, section, article, footer)
+- Meta tags: description, keywords, OG tags
+- Schema.org JSON-LD LocalBusiness
+- Link đến styles.css và script.js
+- ARIA labels cho accessibility
+- Lazy loading images
+
+MÀU SẮC:
+- Chọn palette phù hợp với "${ctx.prompt}"
+- Gradient backgrounds
+- Consistent color scheme
+
+Return JSON format (KHÔNG markdown):
+{"path": "index.html", "content": "<!DOCTYPE html>...<COMPLETE 300+ LINES>...", "type": "html"}`;
 
   try {
     const text = await callGeminiAPI(prompt);
-    return parseJsonResponse<GeneratedFile>(text);
+    const result = parseJsonResponse<GeneratedFile>(text);
+
+    // Validate output quality
+    const lineCount = result.content.split('\n').length;
+    const charCount = result.content.length;
+    console.log(`[Step 1] Generated HTML: ${lineCount} lines, ${charCount} chars`);
+
+    if (charCount < 5000) {
+      console.warn('[Step 1] HTML too short, regenerating with stricter prompt...');
+      const stricterPrompt = prompt + `\n\nCRITICAL: Your previous output was TOO SHORT (${charCount} chars). Generate AT LEAST 10,000 characters of complete HTML code.`;
+      const text2 = await callGeminiAPI(stricterPrompt);
+      return parseJsonResponse<GeneratedFile>(text2);
+    }
+
+    return result;
   } catch (e) {
     console.error('[Step 1] HTML generation failed, using fallback');
     return { path: 'index.html', content: generateFallbackHTML(ctx.prompt, ctx.language), type: 'html' };
   }
 }
 
-// STEP 2: Generate CSS
+// STEP 2: Generate CSS - Context-aware styling
 async function generateCSS(ctx: GenerationContext, htmlContent: string): Promise<GeneratedFile> {
   console.log('[Step 2/4] Generating CSS...');
+  console.log(`[Step 2] Context: "${ctx.prompt.substring(0, 50)}..."`);
 
-  const prompt = `You are a CSS EXPERT. Create a COMPREHENSIVE styles.css file for this website.
+  const prompt = `Bạn là CSS/UI DESIGN EXPERT. Tạo file styles.css HOÀN CHỈNH cho website.
 
-WEBSITE CONTEXT: ${ctx.prompt}
+=== CONTEXT WEBSITE ===
+"${ctx.prompt}"
 
-REQUIREMENTS:
-- AT LEAST 200 lines of CSS
-- CSS custom properties (variables) for colors, fonts
-- Modern layout: Flexbox and Grid
-- Responsive: mobile, tablet, desktop breakpoints
-- Dark mode with prefers-color-scheme
-- Smooth transitions and hover effects
-- Custom animations: fadeIn, slideUp, pulse
-- Typography: line-height, letter-spacing
-- Glassmorphism effects
-- Custom scrollbar
-- Form styling
+=== PHÂN TÍCH THƯƠNG HIỆU ===
+Dựa trên "${ctx.prompt}", hãy:
+1. Xác định BẢNG MÀU phù hợp (primary, secondary, accent)
+2. Xác định FONT phù hợp (sans-serif chuyên nghiệp hay serif sang trọng)
+3. Xác định STYLE (minimal, luxury, playful, corporate...)
 
-The HTML uses Tailwind CSS, but add custom styles for:
-- Custom components not covered by Tailwind
-- Animations
-- Color scheme variables
-- Dark mode overrides
+=== YÊU CẦU BẮT BUỘC ===
+Tạo CSS với TỐI THIỂU 250+ dòng code:
 
-Return JSON only:
-{"path": "styles.css", "content": "/* Full CSS code */", "type": "css"}`;
+1. CSS VARIABLES (30+ variables):
+   - Màu sắc: --color-primary, --color-secondary, --color-accent, --color-bg, --color-text
+   - Typography: --font-primary, --font-secondary
+   - Spacing: --spacing-xs đến --spacing-3xl
+   - Border radius, shadows, transitions
+
+2. RESET & BASE (20+ dòng):
+   - Box-sizing, margin, padding reset
+   - Smooth scroll, font rendering
+
+3. TYPOGRAPHY (30+ dòng):
+   - Headings h1-h6 với scale đẹp
+   - Body text, links, lists
+   - Line-height, letter-spacing
+
+4. COMPONENTS (80+ dòng):
+   - Buttons: primary, secondary, outline, ghost
+   - Cards với hover effects
+   - Forms: inputs, textareas, selects
+   - Navigation styles
+   - Badges, tags
+
+5. LAYOUT (30+ dòng):
+   - Container, grid, flex utilities
+   - Section spacing
+
+6. ANIMATIONS (40+ dòng):
+   - @keyframes fadeIn, slideUp, slideDown, scaleIn, pulse
+   - .animate-* utility classes
+   - Transition timing functions
+
+7. RESPONSIVE (30+ dòng):
+   - Mobile first approach
+   - @media queries: 640px, 768px, 1024px, 1280px
+
+8. DARK MODE (20+ dòng):
+   - @media (prefers-color-scheme: dark)
+   - Inverted colors
+
+9. SPECIAL EFFECTS:
+   - Glassmorphism: backdrop-filter blur
+   - Gradients phù hợp với "${ctx.prompt}"
+   - Custom scrollbar
+   - Selection color
+
+Return JSON (KHÔNG markdown):
+{"path": "styles.css", "content": "/* Complete CSS - 250+ lines */...", "type": "css"}`;
 
   try {
     const text = await callGeminiAPI(prompt);
-    return parseJsonResponse<GeneratedFile>(text);
+    const result = parseJsonResponse<GeneratedFile>(text);
+
+    const lineCount = result.content.split('\n').length;
+    const charCount = result.content.length;
+    console.log(`[Step 2] Generated CSS: ${lineCount} lines, ${charCount} chars`);
+
+    if (charCount < 3000) {
+      console.warn('[Step 2] CSS too short, regenerating...');
+      const stricterPrompt = prompt + `\n\nCRITICAL: Generate AT LEAST 5,000 characters of CSS code. Previous output was only ${charCount} chars.`;
+      const text2 = await callGeminiAPI(stricterPrompt);
+      return parseJsonResponse<GeneratedFile>(text2);
+    }
+
+    return result;
   } catch (e) {
     console.error('[Step 2] CSS generation failed, using fallback');
     return { path: 'styles.css', content: generateFallbackCSS(), type: 'css' };
   }
 }
 
-// STEP 3: Generate JavaScript
+// STEP 3: Generate JavaScript - Feature-rich interactions
 async function generateJS(ctx: GenerationContext): Promise<GeneratedFile> {
   console.log('[Step 3/4] Generating JavaScript...');
+  console.log(`[Step 3] Context: "${ctx.prompt.substring(0, 50)}..."`);
 
-  const prompt = `You are a JavaScript EXPERT. Create a COMPREHENSIVE script.js file.
+  const prompt = `Bạn là JAVASCRIPT EXPERT. Tạo file script.js HOÀN CHỈNH cho website.
 
-WEBSITE CONTEXT: ${ctx.prompt}
+=== CONTEXT WEBSITE ===
+"${ctx.prompt}"
 
-REQUIREMENTS:
-- AT LEAST 100 lines of JavaScript
-- Mobile menu toggle (hamburger menu)
-- Smooth scroll for anchor links
-- Scroll spy for navigation
-- Form validation
-- Intersection Observer for scroll animations
-- Sticky header on scroll
-- Back to top button
-- Modal/popup handling
-- Dynamic content interactions
-- Lazy loading images
+=== YÊU CẦU BẮT BUỘC ===
+Tạo JavaScript với TỐI THIỂU 200+ dòng code, đầy đủ chức năng:
 
-Use modern ES6+ syntax. Add event listeners on DOMContentLoaded.
+1. MOBILE NAVIGATION (30+ dòng):
+   - Toggle hamburger menu
+   - Close menu khi click outside
+   - Close menu khi click link
+   - Body scroll lock khi menu open
 
-Return JSON only:
-{"path": "script.js", "content": "// Complete JavaScript code", "type": "js"}`;
+2. SMOOTH SCROLL (20+ dòng):
+   - Smooth scroll cho tất cả anchor links
+   - Offset cho fixed header
+   - Active state cho navigation
+
+3. SCROLL EFFECTS (40+ dòng):
+   - Sticky header với background change
+   - Scroll spy để highlight active menu
+   - Back to top button (show/hide)
+   - Progress bar (optional)
+
+4. SCROLL ANIMATIONS (40+ dòng):
+   - IntersectionObserver cho animate-on-scroll
+   - Fade in, slide up animations
+   - Stagger animations cho list items
+   - Lazy load images
+
+5. FORM HANDLING (40+ dòng):
+   - Validation cho contact form
+   - Email format check
+   - Phone format check
+   - Required field check
+   - Error message display
+   - Success message
+   - Form reset sau submit
+
+6. UI INTERACTIONS (30+ dòng):
+   - Accordion/FAQ toggle
+   - Tab switching
+   - Modal open/close
+   - Tooltip hover
+   - Counter animation cho stats
+
+7. UTILITY FUNCTIONS:
+   - Debounce/throttle
+   - Get viewport height
+   - Check mobile device
+
+=== KỸ THUẬT ===
+- Modern ES6+ syntax
+- Event delegation khi cần
+- DOMContentLoaded wrapper
+- Error handling
+- Console logs cho debugging
+
+Return JSON (KHÔNG markdown):
+{"path": "script.js", "content": "// Complete JavaScript - 200+ lines...", "type": "js"}`;
 
   try {
     const text = await callGeminiAPI(prompt);
-    return parseJsonResponse<GeneratedFile>(text);
+    const result = parseJsonResponse<GeneratedFile>(text);
+
+    const lineCount = result.content.split('\n').length;
+    const charCount = result.content.length;
+    console.log(`[Step 3] Generated JS: ${lineCount} lines, ${charCount} chars`);
+
+    if (charCount < 2000) {
+      console.warn('[Step 3] JS too short, regenerating...');
+      const stricterPrompt = prompt + `\n\nCRITICAL: Generate AT LEAST 4,000 characters of JavaScript code. Previous output was only ${charCount} chars.`;
+      const text2 = await callGeminiAPI(stricterPrompt);
+      return parseJsonResponse<GeneratedFile>(text2);
+    }
+
+    return result;
   } catch (e) {
     console.error('[Step 3] JS generation failed, using fallback');
     return { path: 'script.js', content: generateFallbackJS(), type: 'js' };
