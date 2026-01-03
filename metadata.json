@@ -1,0 +1,8 @@
+{
+  "name": " DMP AI Landing & Website Builder. test2",
+  "description": "An AI-powered landing page and website generator that transforms simple prompts into SEO-optimized, ready-to-deploy web pages using Gemini AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
