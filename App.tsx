@@ -7,8 +7,7 @@ import { GuideModal } from './components/GuideModal';
 import { FeaturesModal } from './components/FeaturesModal';
 import { IntroScreen } from './components/IntroScreen';
 import { AppState } from './types';
-import { TRANSLATIONS, PAGE_OPTIONS } from './constants';
-import { generateWebsite } from './services/geminiService';
+import { TRANSLATIONS, PAGE_OPTIONS, COMPONENT_OPTIONS } from './constants';
 // @ts-ignore
 import JSZip from 'jszip';
 
@@ -19,6 +18,7 @@ const App: React.FC = () => {
     language: 'vi',
     type: 'landing',
     selectedPages: ['home'],
+    selectedOptions: [],  // NEW: component options
     includeAdmin: false,
     referenceUrl: '',
     referenceImage: null,
@@ -70,10 +70,10 @@ const App: React.FC = () => {
     }));
 
     addLog(t.terminal_analyzing);
-    
+
     try {
       await new Promise(r => setTimeout(r, 800));
-      
+
       if (state.referenceUrl) {
         addLog(`Analyzing reference style: ${state.referenceUrl}...`);
         await new Promise(r => setTimeout(r, 800));
@@ -85,10 +85,10 @@ const App: React.FC = () => {
       }
 
       addLog(t.terminal_detecting);
-      
+
       await new Promise(r => setTimeout(r, 1200));
       addLog(t.terminal_content);
-      
+
       const data = await generateWebsite(
         state.prompt,
         state.language,
@@ -98,17 +98,17 @@ const App: React.FC = () => {
         state.referenceUrl,
         state.referenceImage
       );
-      
+
       addLog(t.terminal_design);
       await new Promise(r => setTimeout(r, 1000));
-      
+
       addLog(t.terminal_seo);
       await new Promise(r => setTimeout(r, 800));
-      
+
       addLog(t.terminal_exporting);
       await new Promise(r => setTimeout(r, 1500));
-      
-      addLog(`✓ Website generated successfully: ${data.seo.title}`);
+
+      addLog(`�?Website generated successfully: ${data.seo.title}`);
 
       setState(prev => ({
         ...prev,
@@ -124,16 +124,16 @@ const App: React.FC = () => {
 
   const downloadZip = async () => {
     if (!state.websiteData) return;
-    
+
     try {
       const zip = new JSZip();
-      
+
       state.websiteData.files.forEach(file => {
         // Normalize path, remove leading slash or ./
         let cleanPath = file.path;
         if (cleanPath.startsWith('/')) cleanPath = cleanPath.slice(1);
         if (cleanPath.startsWith('./')) cleanPath = cleanPath.slice(2);
-        
+
         zip.file(cleanPath, file.content);
       });
 
@@ -150,9 +150,9 @@ const App: React.FC = () => {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
+
       if (state.language === 'vi') {
-        alert('Đã tải xuống toàn bộ mã nguồn website.');
+        alert('Đã tải xuống toàn b�?mã nguồn website.');
       } else {
         alert('Full website source code downloaded successfully.');
       }
@@ -164,9 +164,9 @@ const App: React.FC = () => {
 
   const renderPreview = () => {
     if (!state.websiteData) return null;
-    const indexFile = state.websiteData.files.find(f => f.path.endsWith('index.html')) || 
-                      state.websiteData.files.find(f => f.type === 'html');
-    
+    const indexFile = state.websiteData.files.find(f => f.path.endsWith('index.html')) ||
+      state.websiteData.files.find(f => f.type === 'html');
+
     if (!indexFile) return <div className="p-8 text-center text-red-500">No entry file found</div>;
 
     let fullHtml = indexFile.content;
@@ -174,11 +174,11 @@ const App: React.FC = () => {
     const jsFiles = state.websiteData.files.filter(f => f.type === 'js');
 
     cssFiles.forEach(file => {
-       fullHtml = fullHtml.replace('</head>', `<style>/* ${file.path} */\n${file.content}</style></head>`);
+      fullHtml = fullHtml.replace('</head>', `<style>/* ${file.path} */\n${file.content}</style></head>`);
     });
 
     jsFiles.forEach(file => {
-       fullHtml = fullHtml.replace('</body>', `<script>/* ${file.path} */\n${file.content}</script></body>`);
+      fullHtml = fullHtml.replace('</body>', `<script>/* ${file.path} */\n${file.content}</script></body>`);
     });
 
     return (
@@ -194,7 +194,7 @@ const App: React.FC = () => {
           </div>
           <div className="w-12"></div>
         </div>
-        <iframe 
+        <iframe
           title="Website Preview"
           srcDoc={fullHtml}
           className="w-full flex-grow bg-white min-h-[400px] md:min-h-[550px]"
@@ -212,7 +212,7 @@ const App: React.FC = () => {
           <div key={idx} className="rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 bg-slate-950 shadow-lg">
             <div className="bg-slate-900 px-4 py-2.5 text-xs text-slate-300 font-mono flex justify-between items-center border-b border-slate-800">
               <span className="font-semibold text-slate-200 truncate mr-2">{file.path}</span>
-              <button 
+              <button
                 onClick={() => navigator.clipboard.writeText(file.content)}
                 className="text-blue-400 hover:text-white hover:bg-blue-600 transition-colors bg-slate-800 px-3 py-1.5 rounded font-medium flex-shrink-0"
               >
@@ -230,8 +230,8 @@ const App: React.FC = () => {
 
   if (showIntro) {
     return (
-      <IntroScreen 
-        onStart={() => setShowIntro(false)} 
+      <IntroScreen
+        onStart={() => setShowIntro(false)}
         language={state.language}
         onLanguageChange={(lang) => setState(s => ({ ...s, language: lang }))}
       />
@@ -240,8 +240,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen transition-colors bg-slate-50 dark:bg-slate-950 pb-20 selection:bg-indigo-200 selection:text-indigo-900 animate-fade-in">
-      <Header 
-        language={state.language} 
+      <Header
+        language={state.language}
         onLanguageChange={(lang) => setState(s => ({ ...s, language: lang }))}
         onOpenDonate={() => setIsDonateOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
@@ -272,7 +272,7 @@ const App: React.FC = () => {
               <div className="space-y-3">
                 <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">{t.landingLabel.split('(')[0]}</label>
                 <div className="flex flex-col space-y-3">
-                  <button 
+                  <button
                     role="radio"
                     aria-checked={state.type === 'landing'}
                     onClick={() => setState(s => ({ ...s, type: 'landing' }))}
@@ -283,7 +283,7 @@ const App: React.FC = () => {
                     </div>
                     <span className={`text-sm font-bold ${state.type === 'landing' ? 'text-blue-900 dark:text-blue-100' : 'text-slate-700 dark:text-slate-300'}`}>{t.landingLabel}</span>
                   </button>
-                  <button 
+                  <button
                     role="radio"
                     aria-checked={state.type === 'website'}
                     onClick={() => setState(s => ({ ...s, type: 'website' }))}
@@ -299,18 +299,18 @@ const App: React.FC = () => {
 
               {/* Admin Toggle */}
               <div className="space-y-3">
-                 <label className="group flex items-center space-x-3 cursor-pointer p-3 md:p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-400 transition-all focus-within:ring-2 focus-within:ring-blue-500 shadow-sm">
-                    <div className="relative inline-flex items-center cursor-pointer flex-shrink-0">
-                      <input 
-                        type="checkbox" 
-                        className="sr-only peer" 
-                        checked={state.includeAdmin}
-                        onChange={(e) => setState(s => ({ ...s, includeAdmin: e.target.checked }))}
-                      />
-                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 shadow-inner"></div>
-                    </div>
-                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200 select-none group-hover:text-blue-600 transition-colors">{t.adminLabel}</span>
-                 </label>
+                <label className="group flex items-center space-x-3 cursor-pointer p-3 md:p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-400 transition-all focus-within:ring-2 focus-within:ring-blue-500 shadow-sm">
+                  <div className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={state.includeAdmin}
+                      onChange={(e) => setState(s => ({ ...s, includeAdmin: e.target.checked }))}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 shadow-inner"></div>
+                  </div>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200 select-none group-hover:text-blue-600 transition-colors">{t.adminLabel}</span>
+                </label>
               </div>
 
               {state.type === 'website' && (
@@ -318,7 +318,7 @@ const App: React.FC = () => {
                   <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">{t.selectPages}</label>
                   <div className="grid grid-cols-2 gap-2">
                     {PAGE_OPTIONS.map(page => (
-                      <button 
+                      <button
                         key={page.id}
                         aria-pressed={state.selectedPages.includes(page.id)}
                         onClick={() => {
@@ -346,62 +346,62 @@ const App: React.FC = () => {
 
             {/* Middle & Right: Input */}
             <div className="md:col-span-2 space-y-6 md:space-y-8">
-              
-               {/* Reference Section (URL + Image) */}
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* URL Input */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">
-                      {t.referenceUrlLabel.split('(')[0]} <span className="text-slate-500 font-normal lowercase">(Optional)</span>
-                    </label>
-                    <div className="relative group">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <svg className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                      </div>
-                      <input
-                        type="text"
-                        value={state.referenceUrl}
-                        onChange={(e) => setState(s => ({ ...s, referenceUrl: e.target.value }))}
-                        placeholder={t.referenceUrlPlaceholder}
-                        className="w-full pl-12 p-3 md:p-4 rounded-xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none text-slate-800 dark:text-slate-200 shadow-sm text-sm placeholder:text-slate-400"
-                      />
+
+              {/* Reference Section (URL + Image) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* URL Input */}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">
+                    {t.referenceUrlLabel.split('(')[0]} <span className="text-slate-500 font-normal lowercase">(Optional)</span>
+                  </label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <svg className="h-5 w-5 text-slate-400 group-focus-within:text-blue-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
                     </div>
+                    <input
+                      type="text"
+                      value={state.referenceUrl}
+                      onChange={(e) => setState(s => ({ ...s, referenceUrl: e.target.value }))}
+                      placeholder={t.referenceUrlPlaceholder}
+                      className="w-full pl-12 p-3 md:p-4 rounded-xl bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none text-slate-800 dark:text-slate-200 shadow-sm text-sm placeholder:text-slate-400"
+                    />
                   </div>
-                  
-                  {/* Image Upload */}
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">
-                      {t.referenceImageLabel.split('(')[0]} <span className="text-slate-500 font-normal lowercase">(Optional)</span>
-                    </label>
-                    {!state.referenceImage ? (
-                      <label className="flex flex-col items-center justify-center w-full h-[54px] md:h-[58px] border-2 border-slate-300 dark:border-slate-700 border-dashed rounded-xl cursor-pointer bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-blue-400 transition-all overflow-hidden relative group">
-                        <div className="flex items-center space-x-2 text-slate-500 dark:text-slate-400 group-hover:text-blue-600 px-4 text-center">
-                          <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                          <span className="text-xs font-bold truncate">{t.referenceImagePlaceholder}</span>
-                        </div>
-                        <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-                      </label>
-                    ) : (
-                      <div className="relative w-full h-[54px] md:h-[58px] rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden group bg-white dark:bg-slate-900 flex items-center px-2">
-                        <img src={state.referenceImage} alt="Reference" className="h-9 w-9 md:h-10 md:w-10 object-cover rounded-lg mr-3 shadow-sm border border-slate-200" />
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate flex-1">Image selected</span>
-                        <button 
-                          onClick={removeImage}
-                          className="p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 hover:bg-red-50 transition-colors"
-                          title={t.removeImage}
-                        >
-                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
+                </div>
+
+                {/* Image Upload */}
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">
+                    {t.referenceImageLabel.split('(')[0]} <span className="text-slate-500 font-normal lowercase">(Optional)</span>
+                  </label>
+                  {!state.referenceImage ? (
+                    <label className="flex flex-col items-center justify-center w-full h-[54px] md:h-[58px] border-2 border-slate-300 dark:border-slate-700 border-dashed rounded-xl cursor-pointer bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-blue-400 transition-all overflow-hidden relative group">
+                      <div className="flex items-center space-x-2 text-slate-500 dark:text-slate-400 group-hover:text-blue-600 px-4 text-center">
+                        <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span className="text-xs font-bold truncate">{t.referenceImagePlaceholder}</span>
                       </div>
-                    )}
-                  </div>
-               </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                    </label>
+                  ) : (
+                    <div className="relative w-full h-[54px] md:h-[58px] rounded-xl border-2 border-slate-200 dark:border-slate-700 overflow-hidden group bg-white dark:bg-slate-900 flex items-center px-2">
+                      <img src={state.referenceImage} alt="Reference" className="h-9 w-9 md:h-10 md:w-10 object-cover rounded-lg mr-3 shadow-sm border border-slate-200" />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate flex-1">Image selected</span>
+                      <button
+                        onClick={removeImage}
+                        className="p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title={t.removeImage}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               <div className="space-y-3">
                 <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-widest">Describe your vision</label>
-                <textarea 
+                <textarea
                   value={state.prompt}
                   onChange={(e) => setState(s => ({ ...s, prompt: e.target.value }))}
                   placeholder={t.promptPlaceholder}
@@ -409,7 +409,7 @@ const App: React.FC = () => {
                 ></textarea>
               </div>
 
-              <button 
+              <button
                 onClick={handleGenerate}
                 disabled={state.isGenerating || !state.prompt.trim()}
                 className={`w-full py-3 md:py-4 rounded-2xl font-bold text-base md:text-lg flex items-center justify-center transition-all duration-300 ${state.isGenerating || !state.prompt.trim() ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xl shadow-blue-500/30 hover:shadow-2xl hover:shadow-blue-500/40 hover:-translate-y-0.5 active:scale-[0.98] focus:outline-none focus:ring-4 focus:ring-blue-500/30'}`}
@@ -443,13 +443,13 @@ const App: React.FC = () => {
           <div className="mt-12 md:mt-16 space-y-6 md:space-y-8 animate-fade-in">
             <div className="flex flex-col md:flex-row items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4 gap-4">
               <div className="flex bg-slate-200 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-300 dark:border-slate-700 w-full md:w-auto">
-                <button 
+                <button
                   onClick={() => setState(s => ({ ...s, activeView: 'preview' }))}
                   className={`flex-1 md:flex-none px-4 md:px-6 py-2 md:py-2.5 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${state.activeView === 'preview' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-700 dark:text-white ring-1 ring-black/5' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}
                 >
                   {t.preview}
                 </button>
-                <button 
+                <button
                   onClick={() => setState(s => ({ ...s, activeView: 'code' }))}
                   className={`flex-1 md:flex-none px-4 md:px-6 py-2 md:py-2.5 rounded-lg text-sm font-bold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${state.activeView === 'code' ? 'bg-white dark:bg-slate-700 shadow-sm text-blue-700 dark:text-white ring-1 ring-black/5' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'}`}
                 >
@@ -458,14 +458,14 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex space-x-3 w-full md:w-auto">
-                <button 
+                <button
                   onClick={downloadZip}
                   className="flex-1 md:flex-none flex justify-center items-center px-6 py-2.5 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-300 transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400"
                 >
                   <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                   {t.download}
                 </button>
-                <button 
+                <button
                   className="flex-1 md:flex-none flex justify-center items-center px-6 py-2.5 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 rounded-xl text-sm font-bold hover:bg-black dark:hover:bg-white/90 transition-all shadow-xl focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
                   onClick={() => alert('To deploy: 1. Download source. 2. Install Vercel CLI. 3. Run "vercel" in the folder.')}
                 >
@@ -486,7 +486,7 @@ const App: React.FC = () => {
       <footer className="mt-16 md:mt-24 border-t border-slate-200 dark:border-slate-800 py-8 md:py-12 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center text-slate-600 dark:text-slate-400 text-xs md:text-sm font-medium gap-4 md:gap-0">
           <div className="text-center md:text-left">
-            <span className="font-bold text-slate-800 dark:text-slate-200">DMP AI Developer</span> — {state.language === 'vi' ? 'Sản phẩm bởi chuyên gia Frontend & AI' : 'Powered by Frontend & AI Experts'}
+            <span className="font-bold text-slate-800 dark:text-slate-200">DMP AI Developer</span> �?{state.language === 'vi' ? 'Sản phẩm bởi chuyên gia Frontend & AI' : 'Powered by Frontend & AI Experts'}
           </div>
           <div className="flex space-x-6">
             <a href="mailto:dmpaidev@gmail.com" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Contact</a>
@@ -496,18 +496,18 @@ const App: React.FC = () => {
         </div>
       </footer>
 
-      <DonationModal 
-        isOpen={isDonateOpen} 
-        onClose={() => setIsDonateOpen(false)} 
-        language={state.language} 
+      <DonationModal
+        isOpen={isDonateOpen}
+        onClose={() => setIsDonateOpen(false)}
+        language={state.language}
       />
-      
+
       <GuideModal
         isOpen={isGuideOpen}
         onClose={() => setIsGuideOpen(false)}
         language={state.language}
       />
-      
+
       <FeaturesModal
         isOpen={isFeaturesOpen}
         onClose={() => setIsFeaturesOpen(false)}

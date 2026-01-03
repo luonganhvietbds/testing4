@@ -10,6 +10,8 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     landingLabel: 'Landing Page (Đơn trang)',
     websiteLabel: 'Website (Đa trang)',
     selectPages: 'Chọn các trang cần tạo:',
+    selectOptions: 'Chọn các tính năng bổ sung:',
+    // Pages
     about: 'Giới thiệu',
     services: 'Dịch vụ',
     products: 'Sản phẩm',
@@ -20,6 +22,28 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     testimonials: 'Đánh giá (Testimonials)',
     faq: 'Hỏi đáp (FAQ)',
     team: 'Đội ngũ',
+    // New Pages
+    booking: 'Đặt lịch hẹn',
+    gallery: 'Thư viện ảnh',
+    caseStudies: 'Case Studies',
+    careers: 'Tuyển dụng',
+    privacy: 'Chính sách & Điều khoản',
+    resources: 'Tài liệu/Downloads',
+    courses: 'Khóa học',
+    // Options
+    chatbot: 'Chatbot AI Agent',
+    newsletter: 'Đăng ký Newsletter',
+    partners: 'Logo đối tác/Clients',
+    map: 'Bản đồ Google Maps',
+    videoHero: 'Video Hero',
+    stats: 'Số liệu thống kê',
+    awards: 'Chứng chỉ/Giải thưởng',
+    promoPopup: 'Popup khuyến mãi',
+    appDownload: 'Tải ứng dụng (App CTA)',
+    liveChat: 'Live Chat Widget',
+    multiLang: 'Hỗ trợ đa ngôn ngữ',
+    rating: 'Đánh giá sao',
+    // Terminal
     terminal_analyzing: 'Đang phân tích yêu cầu người dùng...',
     terminal_detecting: 'Xác định cấu trúc website...',
     terminal_content: 'Đang sinh nội dung bằng AI...',
@@ -48,6 +72,8 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     landingLabel: 'Landing Page (Single)',
     websiteLabel: 'Website (Multi-page)',
     selectPages: 'Select pages to generate:',
+    selectOptions: 'Select additional features:',
+    // Pages
     about: 'About Us',
     services: 'Services',
     products: 'Products',
@@ -58,6 +84,28 @@ export const TRANSLATIONS: Record<Language, Translation> = {
     testimonials: 'Testimonials',
     faq: 'FAQ',
     team: 'Team',
+    // New Pages
+    booking: 'Booking/Appointments',
+    gallery: 'Photo Gallery',
+    caseStudies: 'Case Studies',
+    careers: 'Careers',
+    privacy: 'Privacy & Terms',
+    resources: 'Resources/Downloads',
+    courses: 'Courses',
+    // Options
+    chatbot: 'AI Chatbot Agent',
+    newsletter: 'Newsletter Signup',
+    partners: 'Partner/Client Logos',
+    map: 'Google Maps',
+    videoHero: 'Video Hero',
+    stats: 'Stats Counter',
+    awards: 'Certifications/Awards',
+    promoPopup: 'Promo Popup',
+    appDownload: 'App Download CTA',
+    liveChat: 'Live Chat Widget',
+    multiLang: 'Multi-language Support',
+    rating: 'Star Rating',
+    // Terminal
     terminal_analyzing: 'Analyzing user requirements...',
     terminal_detecting: 'Detecting website structure...',
     terminal_content: 'Generating content with AI...',
@@ -80,7 +128,9 @@ export const TRANSLATIONS: Record<Language, Translation> = {
   }
 };
 
+// Original 10 pages + 7 new pages = 17 page options
 export const PAGE_OPTIONS = [
+  // Original pages
   { id: 'about', labelKey: 'about' as keyof Translation },
   { id: 'services', labelKey: 'services' as keyof Translation },
   { id: 'products', labelKey: 'products' as keyof Translation },
@@ -90,5 +140,29 @@ export const PAGE_OPTIONS = [
   { id: 'pricing', labelKey: 'pricing' as keyof Translation },
   { id: 'testimonials', labelKey: 'testimonials' as keyof Translation },
   { id: 'faq', labelKey: 'faq' as keyof Translation },
-  { id: 'team', labelKey: 'team' as keyof Translation }
+  { id: 'team', labelKey: 'team' as keyof Translation },
+  // New pages
+  { id: 'booking', labelKey: 'booking' as keyof Translation },
+  { id: 'gallery', labelKey: 'gallery' as keyof Translation },
+  { id: 'caseStudies', labelKey: 'caseStudies' as keyof Translation },
+  { id: 'careers', labelKey: 'careers' as keyof Translation },
+  { id: 'privacy', labelKey: 'privacy' as keyof Translation },
+  { id: 'resources', labelKey: 'resources' as keyof Translation },
+  { id: 'courses', labelKey: 'courses' as keyof Translation }
+];
+
+// 12 component/widget options
+export const COMPONENT_OPTIONS = [
+  { id: 'chatbot', labelKey: 'chatbot' as keyof Translation, icon: '🤖' },
+  { id: 'newsletter', labelKey: 'newsletter' as keyof Translation, icon: '📰' },
+  { id: 'partners', labelKey: 'partners' as keyof Translation, icon: '🤝' },
+  { id: 'map', labelKey: 'map' as keyof Translation, icon: '📍' },
+  { id: 'videoHero', labelKey: 'videoHero' as keyof Translation, icon: '🎬' },
+  { id: 'stats', labelKey: 'stats' as keyof Translation, icon: '📊' },
+  { id: 'awards', labelKey: 'awards' as keyof Translation, icon: '🏆' },
+  { id: 'promoPopup', labelKey: 'promoPopup' as keyof Translation, icon: '🎉' },
+  { id: 'appDownload', labelKey: 'appDownload' as keyof Translation, icon: '📱' },
+  { id: 'liveChat', labelKey: 'liveChat' as keyof Translation, icon: '💬' },
+  { id: 'multiLang', labelKey: 'multiLang' as keyof Translation, icon: '🌐' },
+  { id: 'rating', labelKey: 'rating' as keyof Translation, icon: '⭐' }
 ];

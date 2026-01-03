@@ -25,6 +25,8 @@ export interface Translation {
   landingLabel: string;
   websiteLabel: string;
   selectPages: string;
+  selectOptions: string;
+  // Pages
   about: string;
   services: string;
   products: string;
@@ -35,6 +37,28 @@ export interface Translation {
   testimonials: string;
   faq: string;
   team: string;
+  // New Pages
+  booking: string;
+  gallery: string;
+  caseStudies: string;
+  careers: string;
+  privacy: string;
+  resources: string;
+  courses: string;
+  // Options/Components
+  chatbot: string;
+  newsletter: string;
+  partners: string;
+  map: string;
+  videoHero: string;
+  stats: string;
+  awards: string;
+  promoPopup: string;
+  appDownload: string;
+  liveChat: string;
+  multiLang: string;
+  rating: string;
+  // Terminal
   terminal_analyzing: string;
   terminal_detecting: string;
   terminal_content: string;
@@ -61,6 +85,7 @@ export interface AppState {
   language: Language;
   type: WebsiteType;
   selectedPages: string[];
+  selectedOptions: string[];  // NEW: Selected component options
   includeAdmin: boolean;
   referenceUrl: string;
   referenceImage: string | null;
